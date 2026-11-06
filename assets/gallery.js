@@ -29,25 +29,8 @@ const GOOGLE_API_KEY='AIzaSyA00rA6evXiyZe9EtBj1qRGW2zRqqxuWO4';                 
    if(h.sig)kept.push({sig:h.sig,g:h.it.g});h.it.sig=h.sig;out.push(h.it);}
   return out;
  }
- // Spread the photos out so look-alike shots, the same family's photos and videos don't bunch up.
- function mix(list){
-  const tone=sig=>{const t=[0,0,0];for(let k=0;k<sig.length;k++)t[k%3]+=sig[k];const n=sig.length/3;return t.map(v=>v/n);};
-  for(const it of list)if(it.sig)it.tone=tone(it.sig);
-  const sim=(a,b)=>{let s=0;
-   if(a.sig&&b.sig){s+=.6*Math.max(0,1-diff(a.sig,b.sig)/70);s+=.5*Math.max(0,1-(Math.abs(a.tone[0]-b.tone[0])+Math.abs(a.tone[1]-b.tone[1])+Math.abs(a.tone[2]-b.tone[2]))/3/45);}
-   if(a.g&&a.g===b.g)s+=.9;
-   if(a.type==='video'&&b.type==='video')s+=.8;
-   if((a.r||1)<.9&&(b.r||1)<.9)s+=.1;
-   return s;};
-  const left=list.slice(),out=[];
-  while(left.length){
-   let best=0,bestCost=Infinity;
-   for(let i=0;i<left.length;i++){let c=Math.random()*.25;
-    for(let j=1;j<=4&&j<=out.length;j++)c+=sim(left[i],out[out.length-j])*[0,1,.6,.35,.2][j];
-    if(c<bestCost){bestCost=c;best=i;}}
-   out.push(left.splice(best,1)[0]);}
-  return out;
- }
+ // Random order on every visit.
+ function mix(list){const a=list.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
  // ---- tiles ----
  function tile(it){
