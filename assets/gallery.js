@@ -19,7 +19,7 @@ const GOOGLE_API_KEY='AIzaSyA00rA6evXiyZe9EtBj1qRGW2zRqqxuWO4';                 
 
  // ---- look-alike detection: compare tiny 12x12 colour thumbnails of every photo ----
  function sigOf(it){return new Promise(res=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{if(img.naturalWidth&&img.naturalHeight)it.r=Math.min(1.8,Math.max(.56,img.naturalWidth/img.naturalHeight));try{const c=document.createElement('canvas');c.width=12;c.height=12;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0,12,12);const d=x.getImageData(0,0,12,12).data;const v=[];for(let k=0;k<d.length;k+=4)v.push(d[k],d[k+1],d[k+2]);res({it,sig:v,ok:true});}catch{res({it,ok:true});}};img.onerror=()=>res({it,ok:true});img.src=src(it,200);});}
- function videoShape(it){return new Promise(res=>{if(it.r)return res({it,ok:true});const v=document.createElement('video');v.muted=true;v.preload='metadata';let done=false;const fin=()=>{if(done)return;done=true;if(v.videoWidth&&v.videoHeight)it.r=Math.min(1.8,Math.max(.56,v.videoWidth/v.videoHeight));v.removeAttribute('src');v.load();res({it,ok:true});};v.addEventListener('loadedmetadata',fin);v.addEventListener('error',fin);setTimeout(fin,6000);v.src=src(it);});}
+ function videoShape(it){return new Promise(res=>{return res({it,ok:true});const v=document.createElement('video');v.muted=true;v.preload='metadata';let done=false;const fin=()=>{if(done)return;done=true;if(v.videoWidth&&v.videoHeight)it.r=Math.min(1.8,Math.max(.56,v.videoWidth/v.videoHeight));v.removeAttribute('src');v.load();res({it,ok:true});};v.addEventListener('loadedmetadata',fin);v.addEventListener('error',fin);setTimeout(fin,6000);v.src=src(it);});}
  const diff=(a,b)=>{let n=0;for(let k=0;k<a.length;k++)n+=Math.abs(a[k]-b[k]);return n/a.length;};
  async function dedupe(items){
   const out=[],kept=[];
@@ -37,11 +37,11 @@ const GOOGLE_API_KEY='AIzaSyA00rA6evXiyZe9EtBj1qRGW2zRqqxuWO4';                 
   const fig=document.createElement('figure');fig.className='gal-item gal-'+it.type;
   fig.style.setProperty('--r',it.r||(it.type==='video'?.5625:1));
   if(it.type==='video'){
-   const v=document.createElement('video');v.muted=true;v.loop=true;v.playsInline=true;v.setAttribute('playsinline','');v.preload='metadata';v.src=src(it);v.setAttribute('aria-label','Kinus video');v.draggable=false;
+   const v=document.createElement('video');v.muted=true;v.loop=true;v.playsInline=true;v.setAttribute('playsinline','');v.preload='metadata';v._it=v._fig=null;v._it=it;v._fig=fig;v.setAttribute('aria-label','Kinus video');v.draggable=false;
    v.addEventListener('loadedmetadata',()=>{if(v.videoWidth&&v.videoHeight)fig.style.setProperty('--r',Math.min(1.8,Math.max(.56,v.videoWidth/v.videoHeight)));measure();});
    const b=document.createElement('button');b.type='button';b.className='gal-sound';b.setAttribute('aria-label','Unmute video');b.textContent='🔇';
    b.addEventListener('click',e=>{e.stopPropagation();const turnOn=v.muted;for(const o of track.querySelectorAll('video')){o.muted=true;const ob=o.parentElement.querySelector('.gal-sound');ob.textContent='🔇';ob.setAttribute('aria-label','Unmute video');}if(turnOn){v.muted=false;v.play().catch(()=>{});b.textContent='🔊';b.setAttribute('aria-label','Mute video');}});
-   let tries=0;v.addEventListener('error',function onErr(){if(tries++===0){v.src='https://drive.usercontent.google.com/download?id='+encodeURIComponent(it.id)+'&export=download&confirm=t';v.load();if(!v.paused||v.closest('.gal-item'))v.play().catch(()=>{});return;}v.removeEventListener('error',onErr);const f=document.createElement('iframe');f.src='https://drive.google.com/file/d/'+encodeURIComponent(it.id)+'/preview';f.allow='autoplay';f.title='Kinus video';f.className='gal-frame';fig.replaceChildren(f);});
+   v.addEventListener('error',()=>fallback(v));
    fig.append(v,b);
   }else{
    const img=document.createElement('img');img.loading='lazy';img.referrerPolicy='no-referrer';img.decoding='async';img.alt='Kinus photo';img.src=src(it,800);img.draggable=false;
@@ -79,10 +79,20 @@ const GOOGLE_API_KEY='AIzaSyA00rA6evXiyZe9EtBj1qRGW2zRqqxuWO4';                 
  track.addEventListener('pointerup',endDrag);track.addEventListener('pointercancel',endDrag);
  track.addEventListener('keydown',e=>{if(e.key==='ArrowRight'){track.scrollLeft+=300;wrap();}if(e.key==='ArrowLeft'){track.scrollLeft-=300;wrap();}});
 
+
+ // Videos: download each one once through the Drive API (shared by its copies in the loop), only when it comes near the screen.
+ const blobs={};
+ const apiUrl=it=>'https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(it.id)+'?alt=media&key='+GOOGLE_API_KEY;
+ function videoBlob(it){if(!blobs[it.id])blobs[it.id]=fetch(apiUrl(it)).then(r=>{if(!r.ok)throw new Error('drive '+r.status);return r.blob();}).then(b=>URL.createObjectURL(b.type.startsWith('video/')?b:new Blob([b],{type:'video/mp4'})));return blobs[it.id];}
+ function needSrc(v){if(v._asked)return;v._asked=1;videoBlob(v._it).then(u=>{v._stage=1;v.src=u;if(v._wantPlay)v.play().catch(()=>{});}).catch(()=>fallback(v));}
+ function fallback(v){const it=v._it;v._stage=(v._stage||0)+1;
+  if(v._stage<=2){v._stage=2;v.src='https://drive.usercontent.google.com/download?id='+encodeURIComponent(it.id)+'&export=download&confirm=t';v.load();if(v._wantPlay)v.play().catch(()=>{});return;}
+  if(v._stage===3){v._stage=4;const f=document.createElement('iframe');f.src='https://drive.google.com/file/d/'+encodeURIComponent(it.id)+'/preview';f.allow='autoplay';f.title='Kinus video';f.className='gal-frame';v._fig.replaceChildren(f);}}
  function playVisible(){
   if(!('IntersectionObserver' in window))return;
-  const io=new IntersectionObserver(es=>{for(const e of es){const v=e.target;if(e.isIntersecting&&!reduce)v.play().catch(()=>{});else{v.pause();}}},{root:track,threshold:.4});
-  track.querySelectorAll('video').forEach(v=>io.observe(v));
+  const io=new IntersectionObserver(es=>{for(const e of es){const v=e.target;v._wantPlay=e.isIntersecting&&!reduce;if(v._wantPlay){needSrc(v);if(v.src)v.play().catch(()=>{});}else v.pause();}},{root:track,threshold:.4});
+  const near=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting)needSrc(e.target);},{root:track,rootMargin:'0px 900px'});
+  track.querySelectorAll('video').forEach(v=>{io.observe(v);near.observe(v);});
  }
 
  listDrive().then(items=>({items})).then(async({items})=>{
